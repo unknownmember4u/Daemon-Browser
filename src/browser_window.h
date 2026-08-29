@@ -8,10 +8,15 @@
 #include "include/views/cef_window_delegate.h"
 #include "include/views/cef_button_delegate.h"
 #include "include/views/cef_textfield_delegate.h"
+#include "include/views/cef_menu_button_delegate.h"
+#include "include/views/cef_menu_button.h"
+#include "include/cef_menu_model_delegate.h"
+#include "security_state.h"
 
 class BrowserWindow : public CefWindowDelegate,
-                      public CefButtonDelegate,
-                      public CefTextfieldDelegate {
+                      public CefTextfieldDelegate,
+                      public CefMenuButtonDelegate,
+                      public CefMenuModelDelegate {
 public:
     BrowserWindow();
 
@@ -21,6 +26,9 @@ public:
     void OnTitleChange(const CefString& title);
     void OnAddressChange(const CefString& url);
     void OnLoadingStateChange(bool isLoading, bool canGoBack, bool canGoForward);
+    
+    // Updates the Security Indicator
+    void UpdateSecurityIndicator(const SecurityInfo& info);
 
     // CefWindowDelegate methods:
     void OnWindowCreated(CefRefPtr<CefWindow> window) override;
@@ -35,6 +43,14 @@ public:
     // CefTextfieldDelegate methods:
     bool OnKeyEvent(CefRefPtr<CefTextfield> textfield, const CefKeyEvent& event) override;
 
+    // CefMenuButtonDelegate methods:
+    void OnMenuButtonPressed(CefRefPtr<CefMenuButton> menu_button,
+                             const CefPoint& screen_point,
+                             CefRefPtr<CefMenuButtonPressedLock> button_pressed_lock) override;
+                             
+    // CefMenuModelDelegate methods:
+    void ExecuteCommand(CefRefPtr<CefMenuModel> menu_model, int command_id, cef_event_flags_t event_flags) override {}
+
 private:
     CefRefPtr<CefWindow> window_;
     CefRefPtr<CefBrowserView> browser_view_;
@@ -42,6 +58,10 @@ private:
     CefRefPtr<CefLabelButton> forward_button_;
     CefRefPtr<CefLabelButton> reload_button_;
     CefRefPtr<CefTextfield> address_bar_;
+    CefRefPtr<CefMenuButton> security_indicator_;
+    
+    SecurityInfo current_security_info_;
 
     IMPLEMENT_REFCOUNTING(BrowserWindow);
 };
+

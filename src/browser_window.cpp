@@ -3,6 +3,7 @@
 #include "include/views/cef_box_layout.h"
 #include "include/wrapper/cef_helpers.h"
 #include <iostream>
+#include "include/cef_command_line.h"
 
 BrowserWindow::BrowserWindow() {
     CEF_REQUIRE_UI_THREAD();
@@ -11,6 +12,11 @@ BrowserWindow::BrowserWindow() {
 
     CefBrowserSettings browser_settings;
     std::string url = "https://example.com/";
+    
+    CefRefPtr<CefCommandLine> command_line = CefCommandLine::GetGlobalCommandLine();
+    if (command_line->HasSwitch("url")) {
+        url = command_line->GetSwitchValue("url").ToString();
+    }
 
     // Create the browser view.
     browser_view_ = CefBrowserView::CreateBrowserView(client, url, browser_settings, nullptr, nullptr, nullptr);
@@ -44,6 +50,10 @@ void BrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
     reload_button_ = CefLabelButton::CreateLabelButton(this, "R");
     toolbar->AddChildView(reload_button_);
 
+    // Create security indicator
+    security_indicator_ = CefMenuButton::CreateMenuButton(this, "Unknown");
+    toolbar->AddChildView(security_indicator_);
+
     // Create address bar
     address_bar_ = CefTextfield::CreateTextfield(this);
     toolbar->AddChildView(address_bar_);
@@ -62,6 +72,63 @@ void BrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
     window->SetBounds(CefRect(100, 100, 1024, 768));
     window->Show();
     browser_view_->RequestFocus();
+}
+
+void BrowserWindow::UpdateSecurityIndicator(const SecurityInfo& info) {
+    CEF_REQUIRE_UI_THREAD();
+    current_security_info_ = info;
+    if (security_indicator_) {
+        std::string state_str;
+        switch (info.level) {
+            case SecurityLevel::SECURE:
+                state_str = "Secure";
+                break;
+            case SecurityLevel::INSECURE:
+                state_str = "Insecure";
+                break;
+            case SecurityLevel::UNKNOWN:
+            default:
+                state_str = "Unknown";
+                break;
+        }
+        security_indicator_->SetText(state_str);
+        std::cout << "SECURITY_STATE: " << state_str << " | URL: " << (info.scheme.empty() ? "" : info.scheme.ToString() + "://") << (info.origin.empty() ? "" : info.origin.ToString()) << std::endl;
+    }
+}
+
+void BrowserWindow::OnMenuButtonPressed(
+      CefRefPtr<CefMenuButton> menu_button,
+      const CefPoint& screen_point,
+      CefRefPtr<CefMenuButtonPressedLock> button_pressed_lock) {
+    CEF_REQUIRE_UI_THREAD();
+    
+    CefRefPtr<CefMenuModel> model = CefMenuModel::CreateMenuModel(this);
+    
+    std::string origin_text = "Origin: " + (current_security_info_.origin.empty() ? "N/A" : current_security_info_.origin.ToString());
+    std::string conn_text = "Connection: " + (current_security_info_.scheme.empty() ? "Unknown" : current_security_info_.scheme.ToString());
+    std::string cert_text = "Certificate: ";
+    cert_text += current_security_info_.has_certificate ? "Available" : "Not available";
+    
+    std::string state_text = "Security state: ";
+    switch (current_security_info_.level) {
+        case SecurityLevel::SECURE: state_text += "Secure"; break;
+        case SecurityLevel::INSECURE: state_text += "Insecure"; break;
+        default: state_text += "Unknown"; break;
+    }
+    
+    model->AddItem(1, origin_text);
+    model->SetEnabled(1, false);
+    
+    model->AddItem(2, conn_text);
+    model->SetEnabled(2, false);
+    
+    model->AddItem(3, cert_text);
+    model->SetEnabled(3, false);
+    
+    model->AddItem(4, state_text);
+    model->SetEnabled(4, false);
+    
+    menu_button->ShowMenu(model, screen_point, CEF_MENU_ANCHOR_BOTTOMCENTER);
 }
 
 void BrowserWindow::OnWindowDestroyed(CefRefPtr<CefWindow> window) {

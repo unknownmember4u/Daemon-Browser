@@ -2,6 +2,7 @@
 #include "browser_window.h"
 #include "include/cef_app.h"
 #include "include/wrapper/cef_helpers.h"
+#include "security_state.h"
 #include <iostream>
 
 DaemonRequestHandler::DaemonRequestHandler(BrowserWindow* browser_window)
@@ -32,6 +33,9 @@ void DaemonRequestHandler::OnAddressChange(CefRefPtr<CefBrowser> browser,
                                            const CefString& url) {
     if (browser_window_) {
         browser_window_->OnAddressChange(url);
+        
+        SecurityInfo info = SecurityState::ComputeFromBrowser(browser, url);
+        browser_window_->UpdateSecurityIndicator(info);
     }
 }
 
@@ -48,6 +52,13 @@ void DaemonRequestHandler::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
                                                 bool canGoForward) {
     if (browser_window_) {
         browser_window_->OnLoadingStateChange(isLoading, canGoBack, canGoForward);
+        
+        if (!isLoading) {
+            // Recompute security when load completes to capture TLS details
+            CefString url = browser->GetMainFrame()->GetURL();
+            SecurityInfo info = SecurityState::ComputeFromBrowser(browser, url);
+            browser_window_->UpdateSecurityIndicator(info);
+        }
     }
 }
 
