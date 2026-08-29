@@ -35,6 +35,7 @@ set(SOURCES
     src/main.cpp
     src/app.cpp
     src/request_handler.cpp
+    src/browser_window.cpp
 )
 
 add_executable(daemon_browser ${SOURCES})

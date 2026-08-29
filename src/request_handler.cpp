@@ -1,15 +1,11 @@
 #include "request_handler.h"
+#include "browser_window.h"
 #include "include/cef_app.h"
 #include "include/wrapper/cef_helpers.h"
 #include <iostream>
 
-DaemonRequestHandler::DaemonRequestHandler() {}
-
-void DaemonRequestHandler::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
-    CEF_REQUIRE_UI_THREAD();
-    // Quit the message loop when the main window is closed.
-    CefQuitMessageLoop();
-}
+DaemonRequestHandler::DaemonRequestHandler(BrowserWindow* browser_window)
+    : browser_window_(browser_window) {}
 
 cef_return_value_t DaemonRequestHandler::OnBeforeResourceLoad(
     CefRefPtr<CefBrowser> browser,
@@ -17,7 +13,7 @@ cef_return_value_t DaemonRequestHandler::OnBeforeResourceLoad(
     CefRefPtr<CefRequest> request,
     CefRefPtr<CefCallback> callback) {
 
-    // REQUEST OBSERVATION
+    // REQUEST OBSERVATION (Maintained exactly as requested)
     std::string method = request->GetMethod();
     std::string url = request->GetURL();
     int resource_type = request->GetResourceType(); // RT_MAIN_FRAME = 0, etc.
@@ -30,3 +26,56 @@ cef_return_value_t DaemonRequestHandler::OnBeforeResourceLoad(
 
     return RV_CONTINUE;
 }
+
+void DaemonRequestHandler::OnAddressChange(CefRefPtr<CefBrowser> browser,
+                                           CefRefPtr<CefFrame> frame,
+                                           const CefString& url) {
+    if (browser_window_) {
+        browser_window_->OnAddressChange(url);
+    }
+}
+
+void DaemonRequestHandler::OnTitleChange(CefRefPtr<CefBrowser> browser,
+                                         const CefString& title) {
+    if (browser_window_) {
+        browser_window_->OnTitleChange(title);
+    }
+}
+
+void DaemonRequestHandler::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
+                                                bool isLoading,
+                                                bool canGoBack,
+                                                bool canGoForward) {
+    if (browser_window_) {
+        browser_window_->OnLoadingStateChange(isLoading, canGoBack, canGoForward);
+    }
+}
+
+bool DaemonRequestHandler::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
+                                         const CefKeyEvent& event,
+                                         CefEventHandle os_event,
+                                         bool* is_keyboard_shortcut) {
+    // Handle Ctrl+L (focus address bar), Ctrl+R (reload), Alt+Left (back), Alt+Right (forward)
+    if (event.type == KEYEVENT_RAWKEYDOWN) {
+        if (event.modifiers & EVENTFLAG_CONTROL_DOWN) {
+            if (event.windows_key_code == 'L') {
+                if (browser_window_) browser_window_->FocusAddressBar();
+                return true;
+            } else if (event.windows_key_code == 'R') {
+                browser->Reload();
+                return true;
+            }
+        } else if (event.modifiers & EVENTFLAG_ALT_DOWN) {
+            if (event.windows_key_code == 37) { // Left arrow
+                if (browser->CanGoBack()) browser->GoBack();
+                return true;
+            } else if (event.windows_key_code == 39) { // Right arrow
+                if (browser->CanGoForward()) browser->GoForward();
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+
