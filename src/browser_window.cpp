@@ -4,6 +4,9 @@
 #include "new_tab_page.h"
 #include "bookmark_manager.h"
 #include "bookmark_manager_page.h"
+#include "history_manager_page.h"
+#include "download_manager_page.h"
+#include "settings_page.h"
 #include "include/views/cef_box_layout.h"
 #include "include/views/cef_fill_layout.h"
 #include "include/wrapper/cef_helpers.h"
@@ -149,21 +152,28 @@ void BrowserWindow::CreateNewTab(const std::string& url) {
 
     std::string target_url = url;
     if (target_url.empty() || target_url == "daemon://newtab") {
-        target_url = "data:text/html;charset=utf-8," + GetNewTabPageHTML();
+        target_url = "https://daemon.internal/newtab";
     } else if (target_url == "daemon://bookmarks") {
-        target_url = "data:text/html;charset=utf-8," + GetBookmarkManagerPageHTML();
+        target_url = "https://daemon.internal/bookmarks";
+    } else if (target_url == "daemon://history") {
+        target_url = "https://daemon.internal/history";
+    } else if (target_url == "daemon://downloads") {
+        target_url = "https://daemon.internal/downloads";
+    } else if (target_url == "daemon://settings") {
+        target_url = "https://daemon.internal/settings";
     }
 
     CefRefPtr<DaemonRequestHandler> client = new DaemonRequestHandler(this);
     CefBrowserSettings browser_settings;
 
     CefRefPtr<CefBrowserView> browser_view =
-        CefBrowserView::CreateBrowserView(client, target_url, browser_settings, nullptr, nullptr, nullptr);
+        CefBrowserView::CreateBrowserView(client, target_url, browser_settings, nullptr, nullptr, new DaemonBrowserViewDelegate());
 
     auto tab = std::make_shared<TabInfo>();
     tab->id = next_tab_id_++;
     tab->title = "New Tab";
     tab->url = target_url;
+    tab->display_url = url.empty() ? "daemon://newtab" : url;
     tab->browser_view = browser_view;
 
     std::string tab_label = " Tab " + std::to_string(tab->id) + " ";
@@ -175,6 +185,34 @@ void BrowserWindow::CreateNewTab(const std::string& url) {
     UpdateTabBarUI();
     SwitchToTab(tab->id);
     SaveCurrentSession();
+}
+
+void BrowserWindow::NavigateActiveTab(const std::string& url) {
+    CEF_REQUIRE_UI_THREAD();
+    auto tab = GetActiveTab();
+    if (!tab) {
+        CreateNewTab(url);
+        return;
+    }
+    tab->display_url = url.empty() ? "daemon://newtab" : url;
+    std::string target_url = url;
+    if (target_url.empty() || target_url == "daemon://newtab") {
+        target_url = "https://daemon.internal/newtab";
+    } else if (target_url == "daemon://bookmarks") {
+        target_url = "https://daemon.internal/bookmarks";
+    } else if (target_url == "daemon://history") {
+        target_url = "https://daemon.internal/history";
+    } else if (target_url == "daemon://downloads") {
+        target_url = "https://daemon.internal/downloads";
+    } else if (target_url == "daemon://settings") {
+        target_url = "https://daemon.internal/settings";
+    }
+
+    tab->url = target_url;
+    if (tab->browser_view && tab->browser_view->GetBrowser()) {
+        tab->browser_view->GetBrowser()->GetMainFrame()->LoadURL(target_url);
+    }
+    UpdateControlsForActiveTab();
 }
 
 void BrowserWindow::CloseTab(int tab_id) {
@@ -246,6 +284,30 @@ void BrowserWindow::SwitchToTab(int tab_id) {
     if ((*tab)->browser_view) {
         (*tab)->browser_view->RequestFocus();
     }
+}
+
+void BrowserWindow::CycleTab(bool forward) {
+    CEF_REQUIRE_UI_THREAD();
+    if (tabs_.size() <= 1) return;
+
+    int current_idx = -1;
+    for (size_t i = 0; i < tabs_.size(); ++i) {
+        if (tabs_[i]->id == active_tab_id_) {
+            current_idx = static_cast<int>(i);
+            break;
+        }
+    }
+
+    if (current_idx == -1) return;
+
+    int next_idx;
+    if (forward) {
+        next_idx = (current_idx + 1) % tabs_.size();
+    } else {
+        next_idx = (current_idx - 1 + static_cast<int>(tabs_.size())) % static_cast<int>(tabs_.size());
+    }
+
+    SwitchToTab(tabs_[next_idx]->id);
 }
 
 void BrowserWindow::ReopenClosedTab() {
@@ -369,7 +431,15 @@ void BrowserWindow::UpdateControlsForActiveTab() {
     }
 
     if (address_bar_ && !address_bar_->HasFocus()) {
-        address_bar_->SetText(tab->url);
+        std::string disp = tab->display_url;
+        if (disp.empty() || disp == "about:blank" || disp.find("https://daemon.internal/") == 0) {
+            if (disp.find("bookmarks") != std::string::npos) disp = "daemon://bookmarks";
+            else if (disp.find("history") != std::string::npos) disp = "daemon://history";
+            else if (disp.find("downloads") != std::string::npos) disp = "daemon://downloads";
+            else if (disp.find("settings") != std::string::npos) disp = "daemon://settings";
+            else disp = "daemon://newtab";
+        }
+        address_bar_->SetText(disp);
     }
 
     if (back_button_) back_button_->SetEnabled(tab->can_go_back);
@@ -387,8 +457,12 @@ void BrowserWindow::UpdateControlsForActiveTab() {
 void BrowserWindow::SaveCurrentSession() {
     std::vector<std::string> urls;
     for (const auto& tab : tabs_) {
-        if (!tab->url.empty()) {
-            urls.push_back(tab->url);
+        std::string target = tab->display_url;
+        if (target.empty() || target.rfind("data:", 0) == 0) {
+            target = tab->url;
+        }
+        if (!target.empty() && target.rfind("data:", 0) != 0) {
+            urls.push_back(target);
         }
     }
     SessionManager::GetInstance().SaveSession(urls);
@@ -399,7 +473,7 @@ void BrowserWindow::OnTitleChange(CefRefPtr<CefBrowser> browser, const CefString
     auto tab = GetTabForBrowser(browser);
     if (tab) {
         std::string t_str = title.ToString();
-        tab->title = t_str.empty() ? "Untitled Page" : t_str;
+        tab->title = t_str.empty() ? "New Tab" : t_str;
         if (tab->id == active_tab_id_) {
             UpdateControlsForActiveTab();
         }
@@ -411,7 +485,17 @@ void BrowserWindow::OnAddressChange(CefRefPtr<CefBrowser> browser, const CefStri
     CEF_REQUIRE_UI_THREAD();
     auto tab = GetTabForBrowser(browser);
     if (tab) {
-        tab->url = url.ToString();
+        std::string new_url = url.ToString();
+        tab->url = new_url;
+        if (new_url.find("https://daemon.internal/") == 0) {
+            if (new_url.find("bookmarks") != std::string::npos) tab->display_url = "daemon://bookmarks";
+            else if (new_url.find("history") != std::string::npos) tab->display_url = "daemon://history";
+            else if (new_url.find("downloads") != std::string::npos) tab->display_url = "daemon://downloads";
+            else if (new_url.find("settings") != std::string::npos) tab->display_url = "daemon://settings";
+            else tab->display_url = "daemon://newtab";
+        } else {
+            tab->display_url = new_url;
+        }
         if (tab->id == active_tab_id_) {
             UpdateControlsForActiveTab();
         }
@@ -484,6 +568,7 @@ void BrowserWindow::OnMenuButtonPressed(
         model->AddSeparator();
         model->AddItem(208, "Security Center Details");
         model->AddItem(212, "Bookmarks Manager");
+        model->AddItem(213, "Settings");
         model->AddItem(209, "Exit Daemon Browser");
         menu_button->ShowMenu(model, screen_point, CEF_MENU_ANCHOR_BOTTOMCENTER);
         return;
@@ -571,6 +656,9 @@ void BrowserWindow::ExecuteCommand(CefRefPtr<CefMenuModel> menu_model, int comma
         case 212:
             CreateNewTab("daemon://bookmarks");
             break;
+        case 213:
+            CreateNewTab("daemon://settings");
+            break;
         case 209:
             if (window_) window_->Close();
             break;
@@ -629,11 +717,11 @@ void BrowserWindow::OnButtonPressed(CefRefPtr<CefButton> button) {
     }
 
     if (home_button_ && btn_id == home_button_->GetID()) {
-        CreateNewTab("");
+        NavigateActiveTab("daemon://newtab");
         return;
     }
     if (bookmarks_button_ && btn_id == bookmarks_button_->GetID()) {
-        CreateNewTab("daemon://bookmarks");
+        NavigateActiveTab("daemon://bookmarks");
         return;
     }
     if (bookmark_button_ && btn_id == bookmark_button_->GetID()) {
@@ -656,11 +744,11 @@ void BrowserWindow::OnButtonPressed(CefRefPtr<CefButton> button) {
         return;
     }
     if (history_button_ && btn_id == history_button_->GetID()) {
-        CreateNewTab("");
+        NavigateActiveTab("daemon://history");
         return;
     }
     if (downloads_button_ && btn_id == downloads_button_->GetID()) {
-        CreateNewTab("");
+        NavigateActiveTab("daemon://downloads");
         return;
     }
 
@@ -711,12 +799,13 @@ bool BrowserWindow::OnKeyEvent(CefRefPtr<CefTextfield> textfield, const CefKeyEv
     if (address_bar_ && textfield->GetID() == address_bar_->GetID()) {
         if (event.type == KEYEVENT_RAWKEYDOWN && event.windows_key_code == 13) {
             auto active_tab = GetActiveTab();
-            if (active_tab && active_tab->browser_view && active_tab->browser_view->GetBrowser()) {
-                CefRefPtr<CefBrowser> browser = active_tab->browser_view->GetBrowser();
+            if (active_tab) {
                 std::string input = address_bar_->GetText().ToString();
                 std::string target_url;
 
-                if (input.find("://") != std::string::npos) {
+                if (input.rfind("daemon://", 0) == 0) {
+                    target_url = input;
+                } else if (input.find("://") != std::string::npos) {
                     target_url = input;
                 } else if (input.find(".") != std::string::npos && input.find(" ") == std::string::npos) {
                     target_url = "https://" + input;
@@ -724,8 +813,10 @@ bool BrowserWindow::OnKeyEvent(CefRefPtr<CefTextfield> textfield, const CefKeyEv
                     target_url = "https://www.google.com/search?q=" + CefURIEncode(input, true).ToString();
                 }
 
-                browser->GetMainFrame()->LoadURL(target_url);
-                active_tab->browser_view->RequestFocus();
+                NavigateActiveTab(target_url);
+                if (active_tab->browser_view) {
+                    active_tab->browser_view->RequestFocus();
+                }
             }
             return true;
         }

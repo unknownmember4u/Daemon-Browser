@@ -45,6 +45,9 @@ set(SOURCES
     src/new_tab_page.cpp
     src/bookmark_manager.cpp
     src/bookmark_manager_page.cpp
+    src/history_manager_page.cpp
+    src/download_manager_page.cpp
+    src/settings_page.cpp
 )
 
 add_executable(daemon_browser ${SOURCES})

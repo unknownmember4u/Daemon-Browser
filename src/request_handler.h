@@ -50,6 +50,11 @@ public:
         CefRefPtr<CefRequest> request,
         CefRefPtr<CefCallback> callback) override;
 
+    virtual CefRefPtr<CefResourceHandler> GetResourceHandler(
+        CefRefPtr<CefBrowser> browser,
+        CefRefPtr<CefFrame> frame,
+        CefRefPtr<CefRequest> request) override;
+
     // CefDisplayHandler methods:
     virtual void OnAddressChange(CefRefPtr<CefBrowser> browser,
                                  CefRefPtr<CefFrame> frame,

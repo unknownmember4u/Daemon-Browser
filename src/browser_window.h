@@ -20,6 +20,7 @@ struct TabInfo {
     int id;
     std::string title;
     std::string url;
+    std::string display_url;
     std::string favicon_url;
     CefRefPtr<CefBrowserView> browser_view;
     CefRefPtr<CefLabelButton> tab_button;
@@ -28,6 +29,15 @@ struct TabInfo {
     bool is_loading = false;
     bool can_go_back = false;
     bool can_go_forward = false;
+};
+
+class DaemonBrowserViewDelegate : public CefBrowserViewDelegate {
+public:
+    DaemonBrowserViewDelegate() {}
+    virtual cef_runtime_style_t GetBrowserRuntimeStyle() override {
+        return CEF_RUNTIME_STYLE_ALLOY;
+    }
+    IMPLEMENT_REFCOUNTING(DaemonBrowserViewDelegate);
 };
 
 class BrowserWindow : public CefWindowDelegate,
@@ -41,9 +51,11 @@ public:
 
     // Tab Management
     void CreateNewTab(const std::string& url = "https://example.com/");
+    void NavigateActiveTab(const std::string& url);
     void CloseTab(int tab_id);
     void CloseActiveTab();
     void SwitchToTab(int tab_id);
+    void CycleTab(bool forward);
     void ReopenClosedTab();
     void StopLoading();
 
@@ -66,6 +78,9 @@ public:
     void OnWindowCreated(CefRefPtr<CefWindow> window) override;
     void OnWindowDestroyed(CefRefPtr<CefWindow> window) override;
     bool CanClose(CefRefPtr<CefWindow> window) override;
+    virtual cef_runtime_style_t GetWindowRuntimeStyle() override {
+        return CEF_RUNTIME_STYLE_ALLOY;
+    }
 
     void FocusAddressBar();
 

@@ -19,18 +19,50 @@ cef_return_value_t DaemonRequestHandler::OnBeforeResourceLoad(
     int resource_type = request->GetResourceType(); // RT_MAIN_FRAME = 0, etc.
 
     if (resource_type == RT_MAIN_FRAME) {
-        // REQUEST OBSERVATION (Maintained exactly as requested)
         std::string method = request->GetMethod();
         std::string url = request->GetURL();
+        std::string display_url = url;
+        if (display_url.rfind("data:", 0) == 0 && display_url.length() > 60) {
+            display_url = display_url.substr(0, 60) + "... [data URL]";
+        }
 
         std::cout << "REQUEST" << std::endl;
         std::cout << "METHOD: " << method << std::endl;
-        std::cout << "URL: " << url << std::endl;
+        std::cout << "URL: " << display_url << std::endl;
         std::cout << "RESOURCE_TYPE: " << resource_type << std::endl;
         std::cout << "---------------------------------" << std::endl;
     }
 
     return RV_CONTINUE;
+}
+
+#include "include/wrapper/cef_stream_resource_handler.h"
+#include "new_tab_page.h"
+#include "bookmark_manager_page.h"
+#include "history_manager_page.h"
+#include "download_manager_page.h"
+#include "settings_page.h"
+
+CefRefPtr<CefResourceHandler> DaemonRequestHandler::GetResourceHandler(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefRequest> request) {
+    std::string url = request->GetURL().ToString();
+    if (url.find("https://daemon.internal/") == 0) {
+        std::string html;
+        if (url == "https://daemon.internal/newtab" || url == "https://daemon.internal/newtab/") html = GetNewTabPageHTML();
+        else if (url == "https://daemon.internal/bookmarks" || url == "https://daemon.internal/bookmarks/") html = GetBookmarkManagerPageHTML();
+        else if (url == "https://daemon.internal/history" || url == "https://daemon.internal/history/") html = GetHistoryManagerPageHTML();
+        else if (url == "https://daemon.internal/downloads" || url == "https://daemon.internal/downloads/") html = GetDownloadManagerPageHTML();
+        else if (url == "https://daemon.internal/settings" || url == "https://daemon.internal/settings/") html = GetSettingsPageHTML();
+        
+        if (!html.empty()) {
+            CefRefPtr<CefStreamReader> stream = CefStreamReader::CreateForData(
+                static_cast<void*>(const_cast<char*>(html.c_str())), html.size());
+            return new CefStreamResourceHandler("text/html", stream);
+        }
+    }
+    return nullptr;
 }
 
 void DaemonRequestHandler::OnAddressChange(CefRefPtr<CefBrowser> browser,
@@ -113,7 +145,13 @@ bool DaemonRequestHandler::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
                 if (browser_window_) browser_window_->ReopenClosedTab();
                 return true;
             } else if (event.windows_key_code == 'T') {
-                if (browser_window_) browser_window_->CreateNewTab("https://example.com/");
+                if (browser_window_) browser_window_->CreateNewTab("");
+                return true;
+            } else if (event.windows_key_code == 9) { // Tab key
+                if (browser_window_) {
+                    bool forward = !(event.modifiers & EVENTFLAG_SHIFT_DOWN);
+                    browser_window_->CycleTab(forward);
+                }
                 return true;
             } else if (event.windows_key_code == 'W') {
                 if (browser_window_) browser_window_->CloseActiveTab();
@@ -236,8 +274,9 @@ bool DaemonRequestHandler::OnBeforePopup(CefRefPtr<CefBrowser> browser,
                                          CefBrowserSettings& settings,
                                          CefRefPtr<CefDictionaryValue>& extra_info,
                                          bool* no_javascript_access) {
-    if (browser_window_ && !target_url.empty()) {
-        browser_window_->CreateNewTab(target_url.ToString());
+    std::string url_str = target_url.ToString();
+    if (!url_str.empty() && browser) {
+        browser->GetMainFrame()->LoadURL(url_str);
     }
     return true; // Cancel default standalone window creation
 }
