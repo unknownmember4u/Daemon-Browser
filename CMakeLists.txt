@@ -37,6 +37,14 @@ set(SOURCES
     src/request_handler.cpp
     src/browser_window.cpp
     src/security_state.cpp
+    src/render_backend.cpp
+    src/security_policy.cpp
+    src/download_manager.cpp
+    src/history_manager.cpp
+    src/session_manager.cpp
+    src/new_tab_page.cpp
+    src/bookmark_manager.cpp
+    src/bookmark_manager_page.cpp
 )
 
 add_executable(daemon_browser ${SOURCES})
@@ -71,5 +79,8 @@ if(OS_LINUX)
         "${CEF_ROOT}/Release/vk_swiftshader_icd.json"
         "${CEF_ROOT}/Release/v8_context_snapshot.bin"
         "$<TARGET_FILE_DIR:daemon_browser>/"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CEF_ROOT}/Release/chrome-sandbox"
+        "$<TARGET_FILE_DIR:daemon_browser>/chrome-sandbox"
     )
 endif()
