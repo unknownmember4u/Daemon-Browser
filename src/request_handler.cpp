@@ -54,6 +54,7 @@ void DaemonRequestHandler::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
         browser_window_->OnLoadingStateChange(isLoading, canGoBack, canGoForward);
         
         if (!isLoading) {
+            std::cout << "BENCHMARK_SIGNAL: LOAD_END" << std::endl;
             // Recompute security when load completes to capture TLS details
             CefString url = browser->GetMainFrame()->GetURL();
             SecurityInfo info = SecurityState::ComputeFromBrowser(browser, url);

@@ -26,6 +26,7 @@ void BrowserWindow::Show() {
     CEF_REQUIRE_UI_THREAD();
     // Create the window. This calls OnWindowCreated.
     CefWindow::CreateTopLevelWindow(this);
+    std::cout << "BENCHMARK_SIGNAL: STARTUP_READY" << std::endl;
 }
 
 void BrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
